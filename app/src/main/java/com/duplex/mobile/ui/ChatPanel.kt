@@ -182,7 +182,11 @@ private fun ChatBubble(m: ChatMessage) {
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.widthIn(max = 380.dp)
                 ) {
-                    Text(m.text, Modifier.padding(10.dp), style = MaterialTheme.typography.bodyMedium)
+                    MarkdownText(
+                        m.text,
+                        modifier = Modifier.padding(10.dp),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
                 }
             }
         }
