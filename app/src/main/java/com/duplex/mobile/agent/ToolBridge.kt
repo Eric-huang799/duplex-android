@@ -1,8 +1,10 @@
 package com.duplex.mobile.agent
 
+import android.content.Context
 import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.inputmethod.InputMethodManager
 import android.webkit.WebView
 import com.duplex.mobile.browser.BrowserTab
 import com.duplex.mobile.browser.PageLibrary
@@ -72,6 +74,49 @@ class ToolBridge(private val tabs: TabManager) {
 
     private fun jsStr(s: String): String = JsonPrimitive(s).toString()
 
+    /** 收起软键盘（AI 操作期间不让输入法挡住页面）。 */
+    private suspend fun hideIme(webView: WebView) {
+        withContext(Dispatchers.Main) {
+            try {
+                val imm = webView.context.getSystemService(Context.INPUT_METHOD_SERVICE)
+                    as? InputMethodManager
+                imm?.hideSoftInputFromWindow(webView.windowToken, 0)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /** 页面内可视化：状态条 / 光标 / 高亮。 */
+    private suspend fun showStatus(tab: BrowserTab, text: String, ttl: Int = 3500) {
+        evalJson(tab.webView, "window.__cb.overlay.status(${jsStr(text)}, $ttl)")
+    }
+
+    private suspend fun showTarget(tab: BrowserTab, r: JsonObject, pulse: Boolean) {
+        val x = r.get("x")?.takeIf { it.isJsonPrimitive }?.asFloat ?: return
+        val y = r.get("y")?.takeIf { it.isJsonPrimitive }?.asFloat ?: return
+        evalJson(tab.webView, "window.__cb.overlay.cursor($x, $y, $pulse)")
+        val rect = r.getAsJsonObject("rect")
+        if (rect != null) {
+            val rx = rect.get("x")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0
+            val ry = rect.get("y")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0
+            val rw = rect.get("w")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0
+            val rh = rect.get("h")?.takeIf { it.isJsonPrimitive }?.asInt ?: 0
+            evalJson(
+                tab.webView,
+                "window.__cb.overlay.highlight($rx, $ry, $rw, $rh, 5000)"
+            )
+        }
+    }
+
+    suspend fun clearOverlay() {
+        val tab = tabs.active ?: return
+        try {
+            ensureLib(tab)
+            evalJson(tab.webView, "window.__cb.overlay.clear()")
+        } catch (_: Exception) {
+        }
+    }
+
     // ---------- target helpers ----------
 
     private fun tabArg(args: JsonObject): BrowserTab? {
@@ -117,6 +162,7 @@ class ToolBridge(private val tabs: TabManager) {
                 if (i < clickCount - 1) SystemClock.sleep(80)
             }
         }
+        hideIme(tab.webView)
         delay(250)
     }
 
@@ -231,9 +277,13 @@ class ToolBridge(private val tabs: TabManager) {
             if (r.get("error") != null) return r.get("error").asString
             val x = r.get("x").asFloat
             val y = r.get("y").asFloat
-            tapTab(tab, x, y)
             val tag = r.get("tag")?.asString ?: "?"
             val text = r.get("text")?.asString ?: ""
+            val label = if (text.isNotBlank()) "「${text.take(16)}」" else "<$tag>"
+            showStatus(tab, "AI 正在点击 $label", 4200)
+            showTarget(tab, r, false)
+            tapTab(tab, x, y)
+            evalJson(tab.webView, "window.__cb.overlay.cursor($x, $y, true)")
             "clicked <$tag>${if (text.isNotBlank()) " \"${text.take(40)}\"" else ""} " +
                 "(visible=${r.get("visible")?.asBoolean ?: false})"
         }
@@ -245,7 +295,13 @@ class ToolBridge(private val tabs: TabManager) {
             val r = evalJson(tab.webView, "window.__cb.resolve(${jsStr(target)})")?.asJsonObject
                 ?: return "ERROR: resolve failed"
             if (r.get("error") != null) return r.get("error").asString
+            showStatus(tab, "AI 正在双击 <${r.get("tag")?.asString ?: "?"}>", 4200)
+            showTarget(tab, r, false)
             tapTab(tab, r.get("x").asFloat, r.get("y").asFloat, clickCount = 2)
+            evalJson(
+                tab.webView,
+                "window.__cb.overlay.cursor(${r.get("x").asFloat}, ${r.get("y").asFloat}, true)"
+            )
             "double-clicked <${r.get("tag")?.asString ?: "?"}>"
         }
 
@@ -256,18 +312,26 @@ class ToolBridge(private val tabs: TabManager) {
             val text = a.get("text").asString
             val clear = a.get("clear")?.takeIf { it.isJsonPrimitive }?.asBoolean ?: true
             val submit = a.get("submit")?.takeIf { it.isJsonPrimitive }?.asBoolean ?: false
-            val f = evalJson(tab.webView, "window.__cb.focus(${jsStr(target)}, $clear)")
-                ?.asJsonObject ?: return "ERROR: focus failed"
-            if (f.get("error") != null) return f.get("error").asString
-            val ins = evalJson(tab.webView, "window.__cb.insertText(${jsStr(text)})")?.asJsonObject
+            val r = evalJson(tab.webView, "window.__cb.resolve(${jsStr(target)})")?.asJsonObject
+                ?: return "ERROR: resolve failed"
+            if (r.get("error") != null) return r.get("error").asString
+            val tag = r.get("tag")?.asString ?: "?"
+            val label = r.get("text")?.asString ?: ""
+            showStatus(tab, "AI 正在输入…", 4200)
+            showTarget(tab, r, false)
+            val ins = evalJson(
+                tab.webView,
+                "window.__cb.typeInto(${jsStr(target)}, ${jsStr(text)}, $clear)"
+            )?.asJsonObject
             if (ins?.get("error") != null) return ins.get("error").asString
+            hideIme(tab.webView)
             if (submit) {
-                evalJson(tab.webView, "window.__cb.pressEnter()")
+                evalJson(tab.webView, "window.__cb.submitFrom(${jsStr(target)})")
                 delay(300)
                 waitForLoad(tab)
+                hideIme(tab.webView)
             }
-            val label = f.get("text")?.asString ?: ""
-            "typed ${text.length} chars into <${f.get("tag")?.asString ?: "?"}>${if (label.isNotBlank()) " \"$label\"" else ""}${if (submit) " and submitted" else ""}"
+            "typed ${text.length} chars into <$tag>${if (label.isNotBlank()) " \"${label.take(40)}\"" else ""} (via ${ins?.get("via")?.asString ?: "?"})${if (submit) " and submitted" else ""}"
         }
 
         "press" -> {

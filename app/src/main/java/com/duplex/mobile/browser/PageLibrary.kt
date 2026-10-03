@@ -6,13 +6,13 @@ package com.duplex.mobile.browser
  * 逻辑保持一致：snapshot 的 [eN] ref 机制、resolve/focus/scroll/query 等。
  */
 object PageLibrary {
-    const val VERSION = 1
+    const val VERSION = 2
 
     val JS: String = """
 (function () {
-  if (window.__cb && window.__cb.v === 1) return;
+  if (window.__cb && window.__cb.v === 2) return;
   var cb = {};
-  cb.v = 1;
+  cb.v = 2;
   var clean = function (s, m) { return (s == null ? '' : String(s)).replace(/\s+/g, ' ').trim().slice(0, m || 60); };
   var resolveEl = function (target) {
     if (/^e\d+$/.test(target)) {
@@ -280,6 +280,126 @@ object PageLibrary {
     } catch (e) {}
     return { ok: true, via: 'keydown' };
   };
+
+  /* 后台输入：不聚焦元素（不弹输入法），直接写值并派发 input/change。 */
+  cb.typeInto = function (target, value, clear) {
+    var el = resolveEl(target);
+    if (!el) return { error: 'element not found: ' + target + ' (call snapshot again)' };
+    if (!el.isConnected) return { error: 'element is detached; call snapshot again' };
+    var isField = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;
+    var oldVal = isField && el.value != null ? String(el.value) : '';
+    var finalVal = clear ? value : oldVal + value;
+    var ok = false, via = '';
+    try {
+      if (isField) {
+        var proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        var desc = Object.getOwnPropertyDescriptor(proto, 'value');
+        if (desc && desc.set) {
+          desc.set.call(el, finalVal);
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          ok = true; via = 'setter';
+        }
+      } else if (el.isContentEditable) {
+        el.textContent = finalVal;
+        el.dispatchEvent(new InputEvent('input', { bubbles: true }));
+        ok = true; via = 'contenteditable';
+      }
+    } catch (e) {}
+    if (!ok) {
+      /* 兜底：聚焦 + execCommand（可能短暂弹输入法），随后立刻失焦 */
+      try {
+        el.focus();
+        if (clear) { try { el.select(); } catch (e2) {} }
+        ok = !!(document.execCommand && document.execCommand('insertText', false, value));
+        via = 'execCommand';
+      } catch (e) {}
+      try { el.blur(); } catch (e3) {}
+    }
+    var nowVal = isField ? String(el.value) : (el.isContentEditable ? String(el.textContent) : '');
+    return { ok: ok, via: via, value: nowVal.slice(0, 60), length: nowVal.length };
+  };
+
+  /* 后台提交：不依赖焦点，直接对元素派发 Enter 并尝试表单提交。 */
+  cb.submitFrom = function (target) {
+    var el = resolveEl(target);
+    if (!el) return { error: 'element not found: ' + target };
+    var mk = function (t) { return new KeyboardEvent(t, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }); };
+    try { el.dispatchEvent(mk('keydown')); el.dispatchEvent(mk('keypress')); el.dispatchEvent(mk('keyup')); } catch (e) {}
+    var form = el.form || (el.closest ? el.closest('form') : null);
+    if (form) {
+      try {
+        if (form.requestSubmit) form.requestSubmit(); else form.submit();
+        return { ok: true, via: 'form' };
+      } catch (e) {}
+    }
+    return { ok: true, via: 'keydown' };
+  };
+
+  /* 页面内可视化 overlay：AI 光标 / 元素高亮 / 底部状态条（shadow DOM 隔离样式）。 */
+  cb.overlay = (function () {
+    var HOST = '__cb_overlay_host';
+    function ensure() {
+      var host = document.getElementById(HOST);
+      if (host && host.__root) return host.__root;
+      host = document.createElement('div');
+      host.id = HOST;
+      host.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;z-index:2147483646;pointer-events:none;';
+      var root = host.attachShadow ? host.attachShadow({ mode: 'open' }) : host;
+      var style = document.createElement('style');
+      style.textContent =
+        '.c{position:fixed;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;border:2.5px solid rgba(66,133,244,.95);background:rgba(66,133,244,.18);box-shadow:0 0 0 3px rgba(66,133,244,.28);transition:left .18s ease,top .18s ease,transform .12s;pointer-events:none;}' +
+        '.c.pulse{transform:scale(.72);}' +
+        '.hl{position:fixed;border:2px solid rgba(255,152,0,.95);background:rgba(255,152,0,.13);border-radius:6px;box-sizing:border-box;pointer-events:none;transition:all .12s;}' +
+        '.st{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);max-width:86vw;background:rgba(32,33,36,.92);color:#fff;font:13px/1.4 Roboto,sans-serif;padding:8px 14px;border-radius:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:0;transition:opacity .18s;pointer-events:none;}' +
+        '.st.show{opacity:1;}';
+      root.appendChild(style);
+      var c = document.createElement('div'); c.className = 'c'; c.style.display = 'none';
+      var hl = document.createElement('div'); hl.className = 'hl'; hl.style.display = 'none';
+      var st = document.createElement('div'); st.className = 'st';
+      root.appendChild(c); root.appendChild(hl); root.appendChild(st);
+      (document.body || document.documentElement).appendChild(host);
+      host.__root = root;
+      return root;
+    }
+    var timers = {};
+    function clearTimer(k) { if (timers[k]) { clearTimeout(timers[k]); timers[k] = null; } }
+    return {
+      cursor: function (x, y, pulse) {
+        try {
+          var r = ensure(); var c = r.querySelector('.c');
+          c.style.display = 'block'; c.style.left = x + 'px'; c.style.top = y + 'px';
+          if (pulse) { c.classList.add('pulse'); setTimeout(function () { c.classList.remove('pulse'); }, 140); }
+          clearTimer('c'); timers['c'] = setTimeout(function () { c.style.display = 'none'; }, 5000);
+        } catch (e) {}
+      },
+      highlight: function (x, y, w, h, ttl) {
+        try {
+          var r = ensure(); var el = r.querySelector('.hl');
+          el.style.display = 'block'; el.style.left = x + 'px'; el.style.top = y + 'px';
+          el.style.width = w + 'px'; el.style.height = h + 'px';
+          clearTimer('hl'); timers['hl'] = setTimeout(function () { el.style.display = 'none'; }, ttl || 5000);
+        } catch (e) {}
+      },
+      status: function (text, ttl) {
+        try {
+          var r = ensure(); var s = r.querySelector('.st');
+          s.textContent = text; s.classList.add('show');
+          clearTimer('st'); timers['st'] = setTimeout(function () { s.classList.remove('show'); }, ttl || 4000);
+        } catch (e) {}
+      },
+      clear: function () {
+        try {
+          var host = document.getElementById(HOST);
+          if (host && host.__root) {
+            host.__root.querySelector('.c').style.display = 'none';
+            host.__root.querySelector('.hl').style.display = 'none';
+            host.__root.querySelector('.st').classList.remove('show');
+          }
+        } catch (e) {}
+      }
+    };
+  })();
 
   window.__cb = cb;
 })();

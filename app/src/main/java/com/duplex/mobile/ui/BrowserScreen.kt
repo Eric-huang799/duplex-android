@@ -57,7 +57,7 @@ fun BrowserScreen(tabs: TabManager) {
     val scope = rememberCoroutineScope()
     val provider = remember { ProviderStore(context) }
     val bridge = remember { ToolBridge(tabs) }
-    val chat = remember { ChatController(scope, bridge, provider) }
+    val chat = remember { ChatController(context, scope, bridge, provider) }
 
     LaunchedEffect(Unit) {
         if (tabs.tabs.isEmpty()) tabs.createTab()

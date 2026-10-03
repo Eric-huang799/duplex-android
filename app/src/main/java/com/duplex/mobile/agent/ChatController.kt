@@ -1,5 +1,6 @@
 package com.duplex.mobile.agent
 
+import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -11,7 +12,10 @@ import com.google.gson.JsonParser
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 /** 聊天面板里的一条消息（text/toolStatus 是可观察状态，支持流式更新）。 */
 class ChatMessage(
@@ -30,6 +34,7 @@ class ChatMessage(
  * LLM 流式输出 → 工具调用 → 执行（ToolBridge）→ 回填结果 → 继续，直到无工具调用。
  */
 class ChatController(
+    private val context: Context,
     private val scope: CoroutineScope,
     private val bridge: ToolBridge,
     val config: ProviderStore
@@ -45,6 +50,12 @@ class ChatController(
     private val history = mutableListOf<JsonObject>()
     private var job: Job? = null
     private var nextId = 1L
+
+    private val file: File get() = File(context.filesDir, "chat_history.json")
+
+    init {
+        load()
+    }
 
     private fun systemPrompt(): String = """
 你是 Duplex 手机/平板版浏览器里的内置操作 agent。你可以直接读写并操作用户当前浏览器里的页面，用户能同时看到你操作的页面。
@@ -86,6 +97,7 @@ class ChatController(
             addProperty("role", "user")
             addProperty("content", text)
         })
+        persist()
         running = true
         job = scope.launch {
             try {
@@ -96,6 +108,13 @@ class ChatController(
             } catch (e: Exception) {
                 addMsg("info", "⚠️ ${e.message ?: e}")
             } finally {
+                withContext(NonCancellable) {
+                    try {
+                        bridge.clearOverlay()
+                    } catch (_: Exception) {
+                    }
+                    persist()
+                }
                 running = false
                 status = ""
             }
@@ -113,6 +132,62 @@ class ChatController(
         stop()
         messages.clear()
         history.clear()
+        try {
+            file.delete()
+        } catch (_: Exception) {
+        }
+    }
+
+    /** 持久化（app 私有目录，重启后恢复）。 */
+    fun persist() {
+        try {
+            if (messages.size > 400) {
+                repeat(messages.size - 400) { messages.removeAt(0) }
+            }
+            if (history.size > 200) {
+                repeat(history.size - 200) { history.removeAt(0) }
+            }
+            val arr = JsonArray()
+            messages.forEach { m ->
+                val o = JsonObject()
+                o.addProperty("id", m.id)
+                o.addProperty("role", m.role)
+                o.addProperty("text", m.text)
+                m.toolName?.let { o.addProperty("toolName", it) }
+                m.toolStatus?.let { o.addProperty("toolStatus", it) }
+                m.toolDetail?.let { o.addProperty("toolDetail", it) }
+                arr.add(o)
+            }
+            val root = JsonObject()
+            root.add("messages", arr)
+            root.add("history", JsonArray().also { h -> history.forEach { h.add(it) } })
+            file.writeText(root.toString())
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun load() {
+        try {
+            if (!file.exists()) return
+            val root = JsonParser.parseString(file.readText()).asJsonObject
+            root.getAsJsonArray("messages")?.forEach { el ->
+                val o = el.asJsonObject
+                val m = ChatMessage(
+                    o.get("id")?.takeIf { it.isJsonPrimitive }?.asLong ?: nextId++,
+                    o.get("role")?.asString ?: "info",
+                    o.get("text")?.takeIf { !it.isJsonNull }?.asString ?: "",
+                    o.get("toolName")?.takeIf { !it.isJsonNull }?.asString
+                )
+                m.toolStatus = o.get("toolStatus")?.takeIf { !it.isJsonNull }?.asString
+                m.toolDetail = o.get("toolDetail")?.takeIf { !it.isJsonNull }?.asString
+                messages.add(m)
+            }
+            root.getAsJsonArray("history")?.forEach { el ->
+                if (el.isJsonObject) history.add(el.asJsonObject)
+            }
+            nextId = (messages.maxOfOrNull { it.id } ?: 0L) + 1
+        } catch (_: Exception) {
+        }
     }
 
     private suspend fun runLoop() {
@@ -165,6 +240,7 @@ class ChatController(
                     addProperty("tool_call_id", tc.id)
                     addProperty("content", out.take(30000))
                 })
+                persist()
             }
         }
     }
