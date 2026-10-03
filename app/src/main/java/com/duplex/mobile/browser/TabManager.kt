@@ -6,6 +6,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Message
 import android.view.ViewGroup
+import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -23,6 +24,9 @@ class BrowserTab(val id: Int, val webView: WebView) {
     var progress by mutableStateOf(0)
     var canGoBack by mutableStateOf(false)
     var canGoForward by mutableStateOf(false)
+
+    /** 最近的 console 消息（get_console 工具用）。 */
+    val console = mutableStateListOf<String>()
 
     val isBlank: Boolean get() = url.isBlank() && !isLoading
 }
@@ -113,6 +117,14 @@ class TabManager(private val context: Context) {
 
             override fun onReceivedTitle(view: WebView?, t: String?) {
                 if (!t.isNullOrBlank()) tab.title = t
+            }
+
+            override fun onConsoleMessage(msg: ConsoleMessage): Boolean {
+                if (tab.console.size > 300) tab.console.removeAt(0)
+                tab.console.add(
+                    "[${msg.messageLevel()}] ${msg.message()} (${msg.sourceId()}:${msg.lineNumber()})"
+                )
+                return true
             }
         }
         if (!initialUrl.isNullOrBlank() && initialUrl != "about:blank") wv.loadUrl(initialUrl)

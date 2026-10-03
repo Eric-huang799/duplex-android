@@ -10,7 +10,8 @@ A shared browser for a human and an AI on Android — the human sees the rendere
 
 - [x] **P0** shell — WebView + address bar (search / URL) + back / forward / reload
 - [x] **P1** multi-tab (create / switch / close), start page (clock + search), dark / light theme, non-web scheme handling (`baiduboxapp://` etc.), `_blank` → new tab
-- [ ] **P2** built-in agent (OpenAI-compatible / Anthropic / Gemini), browser tools, chat panel
+- [x] **P2** built-in agent — OpenAI-compatible streaming (chat/completions + SSE + tool calls), 18 browser tools (snapshot/click/type/scroll/wait/...), chat panel (tablet side panel / phone fullscreen), tool cards, stop button, auto-scroll
+- [ ] **P3** on-page action visualization + takeover
 - [ ] **P3** on-page action visualization + takeover
 - [ ] **P4** tablet polish, signing, GitHub release
 
