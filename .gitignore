@@ -9,3 +9,4 @@ local.properties
 *.keystore
 .DS_Store
 /captures
+HANDOFF.md
