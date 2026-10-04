@@ -13,6 +13,7 @@ A shared browser for a human and an AI on Android — the human sees the rendere
 - [x] **P2** built-in agent — OpenAI-compatible streaming (chat/completions + SSE + tool calls), 18 browser tools (snapshot/click/type/scroll/wait/...), chat panel (tablet side panel / phone fullscreen), tool cards, stop button, auto-scroll
 - [x] **P3** on-page visualization (cursor ring / element highlight / status pill), background typing (no soft keyboard), persistent chat history (restored after restart)
 - [x] **P4** release signing (keystore) + GitHub release
+- [x] **P5** in-app settings — multi-provider API management (per-vendor configs stored separately, one-tap switching, quick model switcher above the chat input, theme selector)
 - [ ] tablet polish & screenshot tool (deferred)
 
 ## Build

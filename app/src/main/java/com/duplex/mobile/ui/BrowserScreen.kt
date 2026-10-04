@@ -49,10 +49,11 @@ import com.duplex.mobile.agent.ProviderStore
 import com.duplex.mobile.agent.ToolBridge
 import com.duplex.mobile.browser.TabManager
 import com.duplex.mobile.shared.Address
+import com.duplex.mobile.SettingsStore
 
 /** 浏览器主界面：工具栏 + WebView 容器 + 起始页 + 标签总览 + AI 面板。 */
 @Composable
-fun BrowserScreen(tabs: TabManager) {
+fun BrowserScreen(tabs: TabManager, settings: SettingsStore) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val provider = remember { ProviderStore(context) }
@@ -186,6 +187,7 @@ fun BrowserScreen(tabs: TabManager) {
             browserPane(Modifier.weight(1f).fillMaxHeight())
             ChatPanel(
                 controller = chat,
+                settings = settings,
                 onClose = { panelOpen = false },
                 modifier = Modifier.width(400.dp).fillMaxHeight()
             )
@@ -196,6 +198,7 @@ fun BrowserScreen(tabs: TabManager) {
             if (panelOpen) {
                 ChatPanel(
                     controller = chat,
+                    settings = settings,
                     onClose = { panelOpen = false },
                     modifier = Modifier.fillMaxSize()
                 )

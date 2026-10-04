@@ -1,7 +1,9 @@
 package com.duplex.mobile.ui
 
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -11,21 +13,23 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -34,7 +38,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -43,21 +46,29 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.duplex.mobile.SettingsStore
 import com.duplex.mobile.agent.ChatController
 import com.duplex.mobile.agent.ChatMessage
-import com.duplex.mobile.agent.ProviderStore
 
 /** 右侧 AI 聊天面板：手机全屏抽屉 / 平板侧栏通用。 */
 @Composable
-fun ChatPanel(controller: ChatController, onClose: () -> Unit, modifier: Modifier = Modifier) {
+fun ChatPanel(
+    controller: ChatController,
+    settings: SettingsStore,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     var showSettings by remember { mutableStateOf(false) }
+    var modelMenu by remember { mutableStateOf(false) }
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val keyboard = LocalSoftwareKeyboardController.current
+    val cfg = controller.config
 
     fun submitInput() {
         if (input.isNotBlank()) {
@@ -110,7 +121,7 @@ fun ChatPanel(controller: ChatController, onClose: () -> Unit, modifier: Modifie
                 if (controller.messages.isEmpty()) {
                     item {
                         Text(
-                            if (controller.config.configured) {
+                            if (cfg.configured) {
                                 "让 AI 帮你操作浏览器，例如：\n「打开百度，搜索 DeepSeek 最新消息」\n「去 B 站找一个讲 CUDA 的视频」"
                             } else {
                                 "还没有配置模型 API。点右上角 ⚙ 填一个 OpenAI 兼容接口（DeepSeek / Kimi / GLM / Ollama 都可以）。"
@@ -126,6 +137,71 @@ fun ChatPanel(controller: ChatController, onClose: () -> Unit, modifier: Modifie
             }
 
             HorizontalDivider()
+
+            // 模型快速切换栏
+            Row(
+                Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box {
+                    Row(
+                        Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .clickable { modelMenu = true }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            cfg.active?.let {
+                                listOf(it.label, it.model).filter { s -> s.isNotBlank() }.joinToString(" · ")
+                            } ?: "配置模型 API",
+                            style = MaterialTheme.typography.labelMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Icon(
+                            Icons.Filled.ArrowDropDown,
+                            contentDescription = "选择模型",
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    DropdownMenu(expanded = modelMenu, onDismissRequest = { modelMenu = false }) {
+                        cfg.providers.forEach { p ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        listOf(p.label, p.model).filter { it.isNotBlank() }.joinToString(" · "),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                },
+                                leadingIcon = {
+                                    if (cfg.active?.id == p.id) {
+                                        Icon(Icons.Filled.Check, contentDescription = null)
+                                    } else {
+                                        Spacer(Modifier.size(24.dp))
+                                    }
+                                },
+                                onClick = {
+                                    cfg.setActive(p.id)
+                                    modelMenu = false
+                                }
+                            )
+                        }
+                        if (cfg.providers.isNotEmpty()) HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text("管理配置…") },
+                            leadingIcon = { Spacer(Modifier.size(24.dp)) },
+                            onClick = {
+                                modelMenu = false
+                                showSettings = true
+                            }
+                        )
+                    }
+                }
+            }
+
             Row(
                 Modifier.fillMaxWidth().padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -158,7 +234,7 @@ fun ChatPanel(controller: ChatController, onClose: () -> Unit, modifier: Modifie
     }
 
     if (showSettings) {
-        SettingsDialog(controller.config, onDismiss = { showSettings = false })
+        SettingsDialog(cfg, settings, onDismiss = { showSettings = false })
     }
 }
 
@@ -240,69 +316,4 @@ private fun ToolCard(m: ChatMessage) {
             }
         }
     }
-}
-
-@Composable
-private fun SettingsDialog(config: ProviderStore, onDismiss: () -> Unit) {
-    var base by remember { mutableStateOf(config.baseUrl) }
-    var key by remember { mutableStateOf(config.apiKey) }
-    var model by remember { mutableStateOf(config.model) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("模型 API 设置") },
-        text = {
-            Column {
-                Text(
-                    "OpenAI 兼容接口（/chat/completions）。Key 只保存在本机应用内。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(Modifier.horizontalScroll(rememberScrollState())) {
-                    ProviderStore.PRESETS.forEach { p ->
-                        AssistChip(
-                            onClick = {
-                                base = p.baseUrl
-                                if (p.model.isNotBlank()) model = p.model
-                            },
-                            label = { Text(p.label) },
-                            modifier = Modifier.padding(end = 6.dp)
-                        )
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = base,
-                    onValueChange = { base = it },
-                    label = { Text("API 地址") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(6.dp))
-                OutlinedTextField(
-                    value = key,
-                    onValueChange = { key = it },
-                    label = { Text("API Key") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(6.dp))
-                OutlinedTextField(
-                    value = model,
-                    onValueChange = { model = it },
-                    label = { Text("模型名") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                config.save(base, key, model)
-                onDismiss()
-            }) { Text("保存") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
-    )
 }

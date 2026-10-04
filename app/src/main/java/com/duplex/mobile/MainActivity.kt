@@ -22,10 +22,16 @@ class MainActivity : ComponentActivity() {
             val tabs = remember {
                 TabManager(context).also { tabManager = it }
             }
+            val settings = remember { SettingsStore(context) }
+            val dark = when (settings.theme) {
+                SettingsStore.THEME_LIGHT -> false
+                SettingsStore.THEME_DARK -> true
+                else -> isSystemInDarkTheme()
+            }
             MaterialTheme(
-                colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
+                colorScheme = if (dark) darkColorScheme() else lightColorScheme()
             ) {
-                BrowserScreen(tabs)
+                BrowserScreen(tabs, settings)
             }
         }
     }
