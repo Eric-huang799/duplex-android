@@ -1,8 +1,9 @@
 package com.duplex.mobile.ui
 
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -39,6 +40,7 @@ import com.duplex.mobile.SettingsStore
 import com.duplex.mobile.agent.ProviderStore
 
 /** 设置：主题（跟随系统/浅色/深色）+ 供应商与 API 管理（多套配置，分类保存，单选切换）。 */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsDialog(providers: ProviderStore, settings: SettingsStore, onDismiss: () -> Unit) {
     var editing by remember { mutableStateOf<ProviderStore.Provider?>(null) }
@@ -68,13 +70,15 @@ fun SettingsDialog(providers: ProviderStore, settings: SettingsStore, onDismiss:
                 // ---- 主题 ----
                 Text("主题", style = MaterialTheme.typography.labelLarge)
                 Spacer(Modifier.height(6.dp))
-                Row {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
                     SettingsStore.THEME_OPTIONS.forEach { (value, name) ->
                         FilterChip(
                             selected = settings.theme == value,
                             onClick = { settings.updateTheme(value) },
-                            label = { Text(name) },
-                            modifier = Modifier.padding(end = 6.dp)
+                            label = { Text(name) }
                         )
                     }
                 }
@@ -120,7 +124,10 @@ fun SettingsDialog(providers: ProviderStore, settings: SettingsStore, onDismiss:
                 }
 
                 Spacer(Modifier.height(10.dp))
-                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
                     ProviderStore.PRESETS.forEach { preset ->
                         AssistChip(
                             onClick = {
@@ -128,8 +135,7 @@ fun SettingsDialog(providers: ProviderStore, settings: SettingsStore, onDismiss:
                                 base = preset.baseUrl
                                 if (preset.model.isNotBlank()) model = preset.model
                             },
-                            label = { Text(preset.label) },
-                            modifier = Modifier.padding(end = 6.dp)
+                            label = { Text(preset.label) }
                         )
                     }
                 }
