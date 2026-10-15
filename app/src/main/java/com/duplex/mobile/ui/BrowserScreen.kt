@@ -44,6 +44,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.duplex.mobile.agent.AnnotationController
 import com.duplex.mobile.agent.ChatController
 import com.duplex.mobile.agent.ProviderStore
 import com.duplex.mobile.agent.ToolBridge
@@ -57,7 +58,8 @@ fun BrowserScreen(tabs: TabManager, settings: SettingsStore) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val provider = remember { ProviderStore(context) }
-    val bridge = remember { ToolBridge(tabs) }
+    val annotations = remember { AnnotationController(tabs, scope) }
+    val bridge = remember { ToolBridge(tabs, annotations) }
     val chat = remember { ChatController(context, scope, bridge, provider) }
 
     LaunchedEffect(Unit) {
@@ -93,6 +95,13 @@ fun BrowserScreen(tabs: TabManager, settings: SettingsStore) {
     BackHandler(enabled = !switcherOpen && !wide && panelOpen) { panelOpen = false }
     BackHandler(enabled = !switcherOpen && !panelOpen && active?.canGoBack == true) {
         tabs.active?.webView?.goBack()
+    }
+    // 标注模式优先：返回键收起标注工具（保留已画的标记）
+    BackHandler(enabled = annotations.active) { annotations.finishFromPanel() }
+
+    fun requestAnnotation() {
+        if (chat.running) chat.stop()
+        if (annotations.start() && !wide) panelOpen = false
     }
 
     val browserPane: @Composable (Modifier) -> Unit = { m ->
@@ -188,6 +197,9 @@ fun BrowserScreen(tabs: TabManager, settings: SettingsStore) {
             ChatPanel(
                 controller = chat,
                 settings = settings,
+                annotations = annotations,
+                onRequestAnnotation = { requestAnnotation() },
+                onOpenUrl = { url -> if (url.isNotBlank()) tabs.createTab(url) },
                 onClose = { panelOpen = false },
                 modifier = Modifier.width(400.dp).fillMaxHeight()
             )
@@ -199,6 +211,9 @@ fun BrowserScreen(tabs: TabManager, settings: SettingsStore) {
                 ChatPanel(
                     controller = chat,
                     settings = settings,
+                    annotations = annotations,
+                    onRequestAnnotation = { requestAnnotation() },
+                    onOpenUrl = { url -> if (url.isNotBlank()) tabs.createTab(url) },
                     onClose = { panelOpen = false },
                     modifier = Modifier.fillMaxSize()
                 )

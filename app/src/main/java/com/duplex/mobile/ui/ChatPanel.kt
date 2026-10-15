@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DropdownMenu
@@ -38,11 +39,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,14 +55,19 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.duplex.mobile.SettingsStore
+import com.duplex.mobile.agent.AnnotationController
 import com.duplex.mobile.agent.ChatController
 import com.duplex.mobile.agent.ChatMessage
+import kotlinx.coroutines.launch
 
 /** 右侧 AI 聊天面板：手机全屏抽屉 / 平板侧栏通用。 */
 @Composable
 fun ChatPanel(
     controller: ChatController,
     settings: SettingsStore,
+    annotations: AnnotationController,
+    onRequestAnnotation: () -> Unit,
+    onOpenUrl: (String) -> Unit = {},
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -68,13 +76,17 @@ fun ChatPanel(
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val keyboard = LocalSoftwareKeyboardController.current
+    val scope = rememberCoroutineScope()
     val cfg = controller.config
 
     fun submitInput() {
-        if (input.isNotBlank()) {
-            controller.send(input.trim())
-            input = ""
-            keyboard?.hide()
+        val q = input.trim()
+        if (q.isBlank()) return
+        input = ""
+        keyboard?.hide()
+        scope.launch {
+            val composed = annotations.consumeMessage(q)
+            controller.send(composed ?: q)
         }
     }
 
@@ -102,6 +114,20 @@ fun ChatPanel(
                 }
                 IconButton(onClick = { controller.newChat() }) {
                     Icon(Icons.Filled.Add, contentDescription = "新对话")
+                }
+                IconButton(
+                    onClick = onRequestAnnotation,
+                    enabled = annotations.active || annotations.canAnnotate()
+                ) {
+                    Icon(
+                        Icons.Filled.Edit,
+                        contentDescription = "页面标注",
+                        tint = if (annotations.active) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
                 }
                 IconButton(onClick = { showSettings = true }) {
                     Icon(Icons.Filled.Settings, contentDescription = "设置")
@@ -132,7 +158,7 @@ fun ChatPanel(
                     }
                 }
                 items(controller.messages, key = { it.id }) { m ->
-                    ChatBubble(m)
+                    ChatBubble(m, onOpenUrl)
                 }
             }
 
@@ -202,6 +228,34 @@ fun ChatPanel(
                 }
             }
 
+            if (annotations.active) {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "标注模式：在页面上圈选/点选，完成后回这里提问",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = { annotations.finishFromPanel() }) { Text("完成") }
+                }
+            } else if (annotations.markCount > 0) {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "已标注 ${annotations.markCount} 处 · 输入问题后一起发送",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = { annotations.cancelMarks() }) { Text("清除") }
+                }
+            }
+
             Row(
                 Modifier.fillMaxWidth().padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -239,7 +293,7 @@ fun ChatPanel(
 }
 
 @Composable
-private fun ChatBubble(m: ChatMessage) {
+private fun ChatBubble(m: ChatMessage, onOpenUrl: (String) -> Unit) {
     when (m.role) {
         "user" -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             Surface(
@@ -261,7 +315,8 @@ private fun ChatBubble(m: ChatMessage) {
                     MarkdownText(
                         m.text,
                         modifier = Modifier.padding(10.dp),
-                        style = MaterialTheme.typography.bodyMedium
+                        style = MaterialTheme.typography.bodyMedium,
+                        onOpenUrl = onOpenUrl
                     )
                 }
             }

@@ -26,7 +26,10 @@ import kotlin.coroutines.resume
  * 对应桌面版 src/main/tool-handlers.ts（那边走 CDP，这边走 evaluateJavascript +
  * dispatchTouchEvent / dispatchKeyEvent）。
  */
-class ToolBridge(private val tabs: TabManager) {
+class ToolBridge(
+    private val tabs: TabManager,
+    private val annotations: AnnotationController? = null
+) {
 
     suspend fun execute(name: String, args: JsonObject): String {
         return try {
@@ -418,6 +421,21 @@ class ToolBridge(private val tabs: TabManager) {
             if (out.length > 8000) out.take(8000) + "\n…(truncated)"
             else if (out.isBlank()) "(no output)"
             else out
+        }
+
+        "annotation_mode" -> {
+            val ann = annotations ?: return "标注功能不可用"
+            val act = a.get("active")?.takeIf { it.isJsonPrimitive }?.asBoolean ?: true
+            if (act) {
+                if (ann.start()) {
+                    "标注模式已开启：请在页面上圈选/点选内容，完成后在 AI 面板输入问题并发送。"
+                } else {
+                    "当前没有可标注的页面：请先打开一个网页。"
+                }
+            } else {
+                ann.cancelMarks()
+                "标注模式已关闭。"
+            }
         }
 
             else -> "ERROR: unknown tool: $name"

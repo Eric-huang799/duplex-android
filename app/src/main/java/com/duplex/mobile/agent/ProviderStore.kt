@@ -113,7 +113,7 @@ class ProviderStore(context: Context) {
 
     companion object {
         val PRESETS = listOf(
-            Preset("DeepSeek", "https://api.deepseek.com/v1", "deepseek-chat"),
+            Preset("DeepSeek", "https://api.deepseek.com/v1", "deepseek-v4-flash"),
             Preset("Kimi", "https://api.moonshot.cn/v1", ""),
             Preset("智谱 GLM", "https://open.bigmodel.cn/api/paas/v4", "glm-4-plus"),
             Preset("通义千问", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen-plus"),

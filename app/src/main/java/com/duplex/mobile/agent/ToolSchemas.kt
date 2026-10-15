@@ -269,6 +269,20 @@ object ToolSchemas {
         "required": ["script"]
       }
     }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "annotation_mode",
+      "description": "Turn the human annotation mode on/off on the current page. When on, the user can draw boxes/circles/arrows (or tap to pick an element) and ask a question about them; the annotation is delivered to you as a structured message. Use it when you need the user to point at something on the page (e.g. 'which element do you mean?').",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "active": { "type": "boolean", "description": "true = enter annotation mode, false = exit" }
+        },
+        "required": ["active"]
+      }
+    }
   }
 ]
 """

@@ -19,8 +19,9 @@ android {
         applicationId = "com.duplex.mobile"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = 3
+        versionName = "0.2.0"
+        manifestPlaceholders["appLabel"] = "Duplex"
     }
 
     signingConfigs {
@@ -40,6 +41,15 @@ android {
             if (keystorePropertiesFile.exists()) {
                 signingConfig = signingConfigs.getByName("release")
             }
+        }
+        // 与正式版并存的试装版：独立 applicationId（不覆盖平板上的旧版本），
+        // 同钥签名；debuggable 便于自动化测试注入配置（正式发布仍走 release）。
+        create("preview") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".next"
+            versionNameSuffix = "-next"
+            isDebuggable = true
+            manifestPlaceholders["appLabel"] = "Duplex Next"
         }
     }
 
